@@ -41,7 +41,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
                 "wallet.seed-balance-paise=100000",
                 "spring.datasource.hikari.maximum-pool-size=30"
         })
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 class WalletConcurrencyGateIT {
 
     private static final long SEED = 100_000L;

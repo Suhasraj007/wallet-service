@@ -31,7 +31,7 @@ mvn spring-boot:run
 mvn verify
 ```
 
-This runs the unit tests plus `WalletConcurrencyGateIT`, which boots the real app against a throwaway Postgres 16 container and reproduces the live probe: 100 concurrent first-transfers between brand-new users, 100 concurrent retries of one idempotency key, exact-count insufficient-funds draining, replay/conflict semantics, and participant-only reads. Docker must be running.
+This runs the unit tests plus `WalletConcurrencyGateIT`, which boots the real app against a throwaway Postgres 16 container and reproduces the live probe: 100 concurrent first-transfers between brand-new users, 100 concurrent retries of one idempotency key, exact-count insufficient-funds draining, replay/conflict semantics, and participant-only reads. Docker must be running for the integration gate; without a Docker daemon `WalletConcurrencyGateIT` is skipped (reported as skipped, not failed) and only the unit tests run.
 
 ## Burst probe (the correctness gate)
 
