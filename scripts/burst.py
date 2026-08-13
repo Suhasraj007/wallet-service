@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import random
+import ssl
 import string
 import sys
 import threading
@@ -29,6 +30,33 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+
+
+def _tls_context():
+    """Verified TLS, with a working trust store on every machine.
+
+    Python builds from python.org on macOS ship without the system CA
+    bundle wired up, so urllib rejects every certificate until the bundled
+    "Install Certificates.command" is run. certifi, when present, provides
+    the same roots. Verification is never disabled - a probe that skips it
+    is not a probe you can trust.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
+TLS = _tls_context()
+
+CERT_HINT = (
+    "TLS certificate verification failed. This is a local Python trust-store "
+    "problem, not a problem with the service.\n"
+    "  macOS (python.org build): run \"/Applications/Python 3.x/Install "
+    "Certificates.command\"\n"
+    "  or install the roots: python3 -m pip install --upgrade certifi"
+)
 
 
 def call(base, method, path, body=None, token=None, request_id=None, timeout=30):
@@ -42,7 +70,7 @@ def call(base, method, path, body=None, token=None, request_id=None, timeout=30)
         req.add_header("X-Request-Id", request_id)
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=TLS) as resp:
             payload = json.loads(resp.read().decode() or "{}")
             return resp.status, payload, time.monotonic() - started
     except urllib.error.HTTPError as e:
@@ -51,18 +79,33 @@ def call(base, method, path, body=None, token=None, request_id=None, timeout=30)
         except Exception:
             payload = {}
         return e.code, payload, time.monotonic() - started
+    except urllib.error.URLError as e:
+        reason = e.reason
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            return 0, {"error": "tls", "message": str(reason)}, time.monotonic() - started
+        return 0, {"error": "transport", "message": str(reason)}, time.monotonic() - started
     except Exception as e:
         return 0, {"error": "transport", "message": str(e)}, time.monotonic() - started
 
 
-def wait_until_awake(base, attempts=30, delay=3):
-    """Free-tier hosts may sleep; poke /healthz until the instance is up."""
+def wait_until_awake(base, attempts=20, delay=5):
+    """Free-tier hosts may sleep; poke /healthz until the instance is up.
+
+    The per-attempt timeout is generous because a cold start on a free
+    instance can take the better part of a minute, and a probe that gives up
+    early would report a waking service as a dead one.
+    """
     for attempt in range(1, attempts + 1):
-        status, _, _ = call(base, "GET", "/healthz", timeout=10)
+        status, body, _ = call(base, "GET", "/healthz", timeout=30)
         if status == 200:
             return True
+        if body.get("error") == "tls":
+            print("\nFAIL: " + CERT_HINT)
+            print(f"  detail: {body.get('message')}")
+            sys.exit(1)
+        detail = body.get("message") or "no response"
         print(f"  waiting for the service to wake up "
-              f"(attempt {attempt}/{attempts}, got {status or 'no response'})...")
+              f"(attempt {attempt}/{attempts}, got {status or detail})...")
         time.sleep(delay)
     return False
 
