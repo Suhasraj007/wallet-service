@@ -9,9 +9,6 @@
                 <customFields>{"service":"wallet-service"}</customFields>
             </encoder>
         </appender>
-        <root level="INFO">
-            <appender-ref ref="STDOUT"/>
-        </root>
     </springProfile>
 
     <!-- Local dev: readable lines; correlation id and event key-values
@@ -22,15 +19,11 @@
                 <pattern>%d{HH:mm:ss.SSS} %-5level [%X{correlation_id:-}] %logger{24} - %msg %kvp%n</pattern>
             </encoder>
         </appender>
-        <root level="INFO">
-            <appender-ref ref="STDOUT"/>
-        </root>
     </springProfile>
 
-    <!-- Add "loki" to SPRING_PROFILES_ACTIVE to also push every log line
-         straight to Grafana Cloud Loki (basic auth). Loki4j's defaults ship
-         level/thread/logger plus all MDC and key-value pairs as structured
-         metadata; the message body is the same JSON shape as stdout. -->
+    <!-- Add "loki" to SPRING_PROFILES_ACTIVE to ALSO push every line to
+         Grafana Cloud Loki. Loki4j's defaults ship level/thread/logger plus
+         all MDC and key-value pairs as structured metadata. -->
     <springProfile name="loki">
         <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
             <labels>
@@ -51,8 +44,15 @@
                 <timeoutMs>5000</timeoutMs>
             </batch>
         </appender>
-        <root level="INFO">
-            <appender-ref ref="LOKI"/>
-        </root>
     </springProfile>
+
+    <!-- ONE root logger. stdout is always attached, so a misconfigured or
+         unreachable Loki can never cost us the container logs - which is
+         exactly how you debug a failing deploy. Loki is purely additive. -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+        <springProfile name="loki">
+            <appender-ref ref="LOKI"/>
+        </springProfile>
+    </root>
 </configuration>
