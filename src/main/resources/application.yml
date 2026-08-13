@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: wallet-service
+  datasource:
+    # Standard Spring env vars override these: SPRING_DATASOURCE_URL,
+    # SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD.
+    # Defaults match docker-compose local dev only (db published on host
+    # port 5433 to dodge local Postgres installs); nothing sensitive here.
+    url: jdbc:postgresql://localhost:5433/wallet
+    username: wallet
+    password: wallet
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      # Every wait is bounded, so the transfer path fails closed (503 +
+      # Retry-After) instead of hanging when the database is unreachable.
+      # The limits are sized above legitimate contention, not below it: a
+      # burst of concurrent transfers between the same pair serializes on
+      # one row lock by design, and that queueing must not be mistaken for
+      # a database fault. socketTimeout is in SECONDS and covers any socket
+      # read, including a SELECT ... FOR UPDATE waiting its turn.
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:10000}
+      validation-timeout: 2000
+      data-source-properties:
+        socketTimeout: ${DB_SOCKET_TIMEOUT_SECONDS:30}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+  flyway:
+    enabled: true
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+wallet:
+  # The brief defines no deposit endpoint, so brand-new wallets are seeded
+  # with a demo balance; otherwise no transfer could ever succeed. Stated
+  # openly in the write-up. Conservation still holds exactly:
+  # sum(balances) == wallets_created * seed at all times.
+  seed-balance-paise: ${INITIAL_BALANCE_PAISE:100000}
+
+auth:
+  # Dev-only default so local runs work; real deployments MUST set JWT_SECRET.
+  jwt-secret: ${JWT_SECRET:dev-only-secret-0123456789abcdef-not-for-prod}
+  token-ttl-seconds: ${TOKEN_TTL_SECONDS:86400}
+
+management:
+  metrics:
+    distribution:
+      # p99 latency for every endpoint is computable from these histograms,
+      # which are published through GET /metrics (see MetricsController).
+      percentiles-histogram:
+        http.server.requests: true

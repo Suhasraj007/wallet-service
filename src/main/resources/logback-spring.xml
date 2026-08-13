@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Deployed / Docker (SPRING_PROFILES_ACTIVE includes "json"):
+         one JSON object per line on stdout, carrying MDC (correlation_id,
+         user_id) and the key-value pairs attached to each event log. -->
+    <springProfile name="json">
+        <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <customFields>{"service":"wallet-service"}</customFields>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="STDOUT"/>
+        </root>
+    </springProfile>
+
+    <!-- Local dev: readable lines; correlation id and event key-values
+         still visible via %X and %kvp. -->
+    <springProfile name="!json">
+        <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %-5level [%X{correlation_id:-}] %logger{24} - %msg %kvp%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="STDOUT"/>
+        </root>
+    </springProfile>
+
+    <!-- Add "loki" to SPRING_PROFILES_ACTIVE to also push every log line
+         straight to Grafana Cloud Loki (basic auth). Loki4j's defaults ship
+         level/thread/logger plus all MDC and key-value pairs as structured
+         metadata; the message body is the same JSON shape as stdout. -->
+    <springProfile name="loki">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <labels>
+                app = wallet-service
+                env = ${LOKI_ENV:-prod}
+            </labels>
+            <message class="com.github.loki4j.logback.JsonLayout"/>
+            <http>
+                <url>${LOKI_URL}</url>
+                <auth>
+                    <username>${LOKI_USERNAME}</username>
+                    <password>${LOKI_PASSWORD}</password>
+                </auth>
+                <requestTimeoutMs>10000</requestTimeoutMs>
+            </http>
+            <batch>
+                <maxItems>100</maxItems>
+                <timeoutMs>5000</timeoutMs>
+            </batch>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="LOKI"/>
+        </root>
+    </springProfile>
+</configuration>
